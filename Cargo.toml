@@ -1,0 +1,20 @@
+[package]
+name = "va-ts"
+version = "0.0.1"
+edition = "2018"
+authors = ["Ivan Egorov <vany.egorov@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/video-audio/va-ts"
+homepage = "https://github.com/video-audio/va-ts"
+documentation = "https://docs.rs/tokio-buf/0.0.1/va-ts"
+description = """
+MPEG-TS implementation for Rust
+"""
+keywords = ["ts", "mpeg-ts", "dvb", "muxer", "demuxer", "udp", "multicast", "fifo"]
+categories = ["video-audio"]
+
+[dependencies]
+chrono = "~0.4"
+clap = "~2.33"
+encoding_rs = "~0.8"
+url = "~1.7"

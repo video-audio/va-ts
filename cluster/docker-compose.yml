@@ -1,0 +1,14 @@
+version: "3"
+
+services:
+  build-rs:
+    build:
+      dockerfile: ./cluster/build-rs/Dockerfile
+      context: ..
+
+  tsplay:
+    build:
+      dockerfile: ./cluster/tsplay/Dockerfile
+      context: ..
+    volumes:
+      - ../dumps/:/mnt/dumps/
