@@ -10,7 +10,11 @@ documentation = "https://docs.rs/tokio-buf/0.0.1/va-ts"
 description = """
 MPEG-TS implementation for Rust
 """
-keywords = ["ts", "mpeg-ts", "dvb", "muxer", "demuxer", "udp", "multicast", "fifo"]
+keywords = [
+    "ts", "mpeg-ts", "dvb",
+    "muxer", "demuxer", "udp",
+    "multicast", "fifo"
+]
 categories = ["video-audio"]
 exclude = [
     "cluster/*",

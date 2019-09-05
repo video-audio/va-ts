@@ -1,5 +1,8 @@
 # video-audio mpeg-ts muxer/demuxer
 
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Crate](http://meritbadge.herokuapp.com/va-ts)](https://crates.io/crates/va-ts)
+
 MPEG-TS implementation for Rust.
 
 ## Overview
