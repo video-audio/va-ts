@@ -12,8 +12,7 @@ MPEG-TS implementation for Rust
 """
 keywords = [
     "ts", "mpeg-ts", "dvb",
-    "muxer", "demuxer", "udp",
-    "multicast", "fifo"
+    "muxer", "demuxer"
 ]
 categories = ["video-audio"]
 exclude = [
