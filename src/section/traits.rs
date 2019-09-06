@@ -38,6 +38,12 @@ pub(crate) trait WithHeader<'buf>: Bufer<'buf> {
     fn section_length(&self) -> u16 {
         (u16::from(self.b()[1] & 0b0000_1111) << 8) | u16::from(self.b()[2])
     }
+
+    /// complete section length
+    #[inline(always)]
+    fn sz(&self) -> usize {
+        HEADER_SZ + usize::from(self.section_length())
+    }
 }
 
 pub trait WithTableIDExtension<'buf>: Bufer<'buf> {

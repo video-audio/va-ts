@@ -9,7 +9,7 @@ use crate::packet::Packet;
 use crate::pes::PES;
 use crate::pid::PID;
 use crate::result::Result;
-use crate::section::WithSyntaxSection;
+use crate::section::{WithHeader, WithSyntaxSection};
 use crate::subtable_id::{SubtableID, SubtableIDer};
 use crate::{EIT, PAT, PMT, SDT};
 
@@ -26,6 +26,11 @@ impl Buf {
     fn is_empty(&self) -> bool {
         self.0.position() == 0
     }
+
+    #[inline(always)]
+    fn sz(&self) -> usize {
+        self.0.position() as usize
+    }
 }
 
 impl Default for Buf {
@@ -35,14 +40,24 @@ impl Default for Buf {
 }
 
 struct Section {
+    /// parent table-id
+    table_id: SubtableID,
+
+    /// number inside table sections
     number: u8,
+
+    /// full section size with header, data, CRC
+    sz: usize,
+
     buf: Buf,
 }
 
 impl Section {
-    fn new(number: u8) -> Section {
+    fn new(table_id: SubtableID, number: u8, sz: usize) -> Section {
         Section {
+            table_id,
             number,
+            sz,
             buf: Default::default(),
         }
     }
@@ -50,6 +65,18 @@ impl Section {
     #[inline(always)]
     fn into_ref(self) -> SectionRef {
         Rc::new(RefCell::new(Box::new(self)))
+    }
+
+    /// section consumed all data
+    #[inline(always)]
+    fn done(&self) -> bool {
+        self.sz_need() == 0
+    }
+
+    /// sz need to read
+    #[inline(always)]
+    fn sz_need(&self) -> usize {
+        self.sz - self.buf.sz()
     }
 }
 
@@ -59,7 +86,6 @@ struct Sections(Vec<SectionRef>);
 
 impl Sections {
     #[inline(always)]
-    #[allow(dead_code)]
     fn get_mut(&mut self, number: u8) -> Option<&mut SectionRef> {
         self.0.iter_mut().find(|s| s.borrow().number == number)
     }
@@ -79,16 +105,27 @@ impl Default for Sections {
 }
 
 struct Table {
-    #[allow(dead_code)]
-    id: SubtableID,
+    /// mpeg-ts last-section-number
+    last_section_number: u8,
     sections: Sections,
 }
 
 impl Table {
-    fn new(id: SubtableID) -> Table {
+    fn new(last_section_number: u8) -> Table {
         Table {
-            id,
+            last_section_number,
             sections: Default::default(),
+        }
+    }
+
+    #[inline(always)]
+    fn done(&self) -> bool {
+        match self.sections.0.len() {
+            0 => false,
+            n => {
+                let last = (&self.sections.0[n - 1]).borrow();
+                last.number == self.last_section_number && last.done()
+            }
         }
     }
 }
@@ -121,7 +158,6 @@ struct Stream {
     /// decode time stamp
     dts: Option<Duration>,
 
-    #[allow(dead_code)]
     buf: Buf,
 }
 
@@ -139,7 +175,6 @@ impl Stream {
 
 #[derive(Default)]
 struct Streams {
-    #[allow(dead_code)]
     map: HashMap<PID, Stream>,
 }
 
@@ -187,7 +222,6 @@ pub struct Demuxer {
 
     pmt_pids: PMTPids,
 
-    #[allow(dead_code)]
     streams: Streams,
 }
 
@@ -242,55 +276,62 @@ impl Demuxer {
 
         self.with_tables_mut(pid_or_pmt, |tables| {
             if pkt.pusi() {
-                let (id, section_number) = match pid_or_pmt {
+                let (id, sz, section_number, last_section_number) = match pid_or_pmt {
                     (PID::PAT, false) => {
                         let s = PAT::try_new(buf)?;
-                        (s.subtable_id(), s.section_number())
+                        (
+                            s.subtable_id(),
+                            s.sz(),
+                            s.section_number(),
+                            s.last_section_number(),
+                        )
                     }
                     (PID::SDT, false) => {
                         let s = SDT::try_new(buf)?;
-                        (s.subtable_id(), s.section_number())
+                        (
+                            s.subtable_id(),
+                            s.sz(),
+                            s.section_number(),
+                            s.last_section_number(),
+                        )
                     }
                     (PID::EIT, false) => {
                         let s = EIT::try_new(buf)?;
-                        (s.subtable_id(), s.section_number())
+                        (
+                            s.subtable_id(),
+                            s.sz(),
+                            s.section_number(),
+                            s.last_section_number(),
+                        )
                     }
                     (_, true) => {
                         let s = PMT::try_new(buf)?;
-                        (s.subtable_id(), s.section_number())
+                        (
+                            s.subtable_id(),
+                            s.sz(),
+                            s.section_number(),
+                            s.last_section_number(),
+                        )
                     }
                     _ => unreachable!(),
                 };
 
-                let table = tables.map.entry(id).or_insert_with(|| Table::new(id));
+                let table = tables
+                    .map
+                    .entry(id)
+                    .or_insert_with(|| Table::new(last_section_number));
 
                 let section_ref = match table.sections.get_mut(section_number) {
                     Some(section_ref) => {
-                        {
-                            let mut section = (*section_ref).borrow_mut();
-
-                            {
-                                let raw = section.buf.0.get_ref().as_slice();
-
-                                match pid_or_pmt {
-                                    (PID::PAT, false) => println!("{:?}", PAT::new(raw)),
-                                    (PID::SDT, false) => println!("{:?}", SDT::new(raw)),
-                                    (PID::EIT, false) => println!("{:?}", EIT::new(raw)),
-                                    (_, true) => println!("{:?}", PMT::new(raw)),
-                                    _ => {}
-                                };
-                            }
-
-                            section.buf.reset();
-                        }
+                        let mut section = (*section_ref).borrow_mut();
+                        section.buf.reset();
+                        section.sz = sz;
 
                         section_ref.clone()
                     }
                     None => {
-                        let section_ref = Section::new(section_number).into_ref();
-
+                        let section_ref = Section::new(id, section_number, sz).into_ref();
                         table.sections.push(section_ref.clone());
-
                         section_ref
                     }
                 };
@@ -299,8 +340,43 @@ impl Demuxer {
             }
 
             if let Some(section_ref) = &tables.current {
-                let mut section = (*section_ref).borrow_mut();
-                section.buf.0.write_all(buf)?;
+                {
+                    let mut section = (*section_ref).borrow_mut();
+                    let sz_need = section.sz_need();
+
+                    // remove null/padding bytes
+                    let buf = if buf.len() > sz_need {
+                        &buf[0..sz_need]
+                    } else {
+                        buf
+                    };
+
+                    section.buf.0.write_all(buf)?;
+                }
+
+                {
+                    let section = (*section_ref).borrow();
+                    if section.done() {
+                        if let Some(table) = tables.map.get(&section.table_id) {
+                            if table.done() {
+                                // can emit whole table here;
+
+                                for section_ref in table.sections.0.iter() {
+                                    let section = (*section_ref).borrow();
+                                    let raw = section.buf.0.get_ref().as_slice();
+
+                                    match pid_or_pmt {
+                                        (PID::PAT, false) => println!("{:?}", PAT::new(raw)),
+                                        (PID::SDT, false) => println!("{:?}", SDT::new(raw)),
+                                        (PID::EIT, false) => println!("{:?}", EIT::new(raw)),
+                                        (_, true) => println!("{:?}", PMT::new(raw)),
+                                        _ => {}
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Ok(())
@@ -341,6 +417,7 @@ impl Demuxer {
             }
             PID::SDT | PID::EIT /* | PID::NIT | PID::CAT | PID::BAT */ =>
                 self.demux_section((pid, false), &pkt)?,
+
             PID::Other(..) => {
                 // PAT not ready yet
                 if self.pmt_pids.0.is_empty() {
