@@ -386,7 +386,7 @@ impl Input for InputUDP {
 
         buf = cvar.wait(buf).ok().ok_or(Error::new_with_details(
             ErrorKind::SyncPoison,
-            "udp read cwar wait erorr",
+            "udp read cwar wait error",
         ))?;
 
         while !buf.is_empty() {

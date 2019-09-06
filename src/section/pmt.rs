@@ -113,15 +113,9 @@ impl<'buf> fmt::Debug for PMT<'buf> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            ":PMT (:tid {:?} :tid~p-n(ext)~vn {}~{}~{} :program-number {} :section-length {} :pcr-pid {} :program-info-length {})",
-            self.table_id(),
-            u8::from(self.table_id()),
-            self.program_number(),
-            self.version_number(),
-            self.program_number(),
-            self.section_length(),
+            ":PMT (:id {:?} :pcr-pid {})",
+            self.subtable_id(),
             self.pcr_pid(),
-            self.program_info_length(),
         )?;
 
         write!(f, "\n  :descriptors")?;
@@ -136,9 +130,9 @@ impl<'buf> fmt::Debug for PMT<'buf> {
         }
 
         write!(f, "\n  :streams")?;
-        for p in self.streams().filter_map(Result::ok) {
+        for s in self.streams().filter_map(Result::ok) {
             write!(f, "\n    ")?;
-            p.fmt(f)?;
+            s.fmt(f)?;
         }
 
         Ok(())

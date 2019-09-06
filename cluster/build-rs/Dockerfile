@@ -20,6 +20,10 @@ RUN RUSTFLAGS=-Clinker=musl-gcc cargo \
   --release \
   --target=x86_64-unknown-linux-musl
 
+RUN rm -rvf ./target/x86_64-unknown-linux-musl/debug/deps/va-ts*
+RUN rm -rvf ./target/x86_64-unknown-linux-musl/debug/va-ts*
+RUN rm -rvf ./target/x86_64-unknown-linux-musl/release/deps/va-ts*
+RUN rm -rvf ./target/x86_64-unknown-linux-musl/release/va-ts*
 RUN rm -rvf ./src/*
 RUN rm -rvf ./examples/*
 

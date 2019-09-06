@@ -159,6 +159,9 @@ struct Stream {
     dts: Option<Duration>,
 
     buf: Buf,
+
+    /// got ts PUSI
+    started: bool,
 }
 
 impl Stream {
@@ -169,37 +172,35 @@ impl Stream {
             pts: None,
             dts: None,
             buf: Default::default(),
+            started: false,
         }
     }
 }
 
 #[derive(Default)]
-struct Streams {
-    map: HashMap<PID, Stream>,
-}
+struct Streams(HashMap<PID, Stream>);
 
-impl Streams {}
-
+/// ((pid, packet-constructed), all-packets-constructed)
 #[derive(Debug)]
-struct PMTPids(Vec<PID>);
+struct PMTPids(Vec<(PID, bool)>, bool);
 
 impl PMTPids {
     #[inline(always)]
     fn has(&self, pid: PID) -> bool {
-        self.0.iter().any(|p| (*p) == pid)
+        self.0.iter().any(|p| (*p).0 == pid)
     }
 
     #[inline(always)]
     fn push_uniq(&mut self, pid: PID) {
         if !self.has(pid) {
-            self.0.push(pid)
+            self.0.push((pid, false))
         }
     }
 }
 
 impl Default for PMTPids {
     fn default() -> Self {
-        PMTPids(Vec::with_capacity(3))
+        PMTPids(Vec::with_capacity(3), false)
     }
 }
 
@@ -220,6 +221,8 @@ pub struct Demuxer {
     #[allow(dead_code)]
     bat: Tables,
 
+    // TODO: add PID with state(is-parsed or not)
+    //       for multiple PMTs
     pmt_pids: PMTPids,
 
     streams: Streams,
@@ -250,6 +253,56 @@ unsafe impl Send for Demuxer {}
 impl Demuxer {
     pub fn new() -> Demuxer {
         Default::default()
+    }
+
+    /// cache pmt pids
+    // TODO: also do via iterator
+    // TODO: .iter().collect() for lazy collection
+    #[inline(always)]
+    fn build_pmt_pids(&mut self) {
+        for (_, table) in self.pat.map.iter() {
+            for section_ref in table.sections.0.iter() {
+                let section = (*section_ref).borrow();
+                let raw = section.buf.0.get_ref().as_slice();
+                let pat = PAT::new(raw);
+
+                // TODO: refactor via iter/to-iter
+                for pid in pat
+                    .programs()
+                    .filter_map(Result::ok)
+                    .filter(|p| p.pid().is_program_map())
+                    .map(|p| PID::from(p.pid()))
+                {
+                    self.pmt_pids.push_uniq(pid)
+                }
+            }
+        }
+    }
+
+    /// cache streams
+    // TODO: also do via iterator
+    // TODO: .iter().collect() for lazy collection
+    #[inline(always)]
+    fn build_streams(&mut self, _pid: PID) {
+        for (_, table) in self.pmt.map.iter() {
+            for section_ref in table.sections.0.iter() {
+                let section = (*section_ref).borrow();
+                let raw = section.buf.0.get_ref().as_slice();
+                let pmt = PMT::new(raw);
+
+                // TODO: refactor via iter/to-iter
+                for pid in pmt
+                    .streams()
+                    .filter_map(Result::ok)
+                    .map(|s| PID::from(s.pid()))
+                {
+                    self.streams
+                        .0
+                        .entry(pid)
+                        .or_insert_with(|| Stream::new(pid));
+                }
+            }
+        }
     }
 
     /// mutably borrow a reference to the underlying tables
@@ -359,7 +412,7 @@ impl Demuxer {
                     if section.done() {
                         if let Some(table) = tables.map.get(&section.table_id) {
                             if table.done() {
-                                // can emit whole table here;
+                                // can emit demuxed table here;
 
                                 for section_ref in table.sections.0.iter() {
                                     let section = (*section_ref).borrow();
@@ -401,18 +454,9 @@ impl Demuxer {
 
                 // extract pids from PAT
                 if self.pmt_pids.0.is_empty() {
-                    let buf = pkt.buf_payload_section()?;
-                    let pat = PAT::new(buf);
-
-                    // TODO: refactor via iter/to-iter
-                    for pid in pat
-                        .programs()
-                        .filter_map(Result::ok)
-                        .filter(|p| p.pid().is_program_map())
-                        .map(|p| PID::from(p.pid()))
-                    {
-                        self.pmt_pids.push_uniq(pid)
-                    }
+                    self.pmt_pids.0.clear();
+                    self.streams.0.clear();
+                    self.build_pmt_pids();
                 }
             }
             PID::SDT | PID::EIT /* | PID::NIT | PID::CAT | PID::BAT */ =>
@@ -424,42 +468,47 @@ impl Demuxer {
                     return Ok(());
                 }
 
-                if !self.pmt_pids.0.is_empty() && self.pmt_pids.has(pid) {
+                if self.pmt_pids.has(pid) {
                     self.demux_section((pid, true), &pkt)?;
-                    // TODO: generate streams
-                } else {
-                    let buf = pkt.buf_payload_pes()?;
 
-                    let stream = self
-                        .streams
-                        .map
-                        .entry(pid)
-                        .or_insert_with(|| Stream::new(pid));
+                    if self.streams.0.is_empty() {
+                        self.build_streams(pid);
+                    }
+
+                } else {
+                    let mut buf = pkt.buf_payload_pes()?;
+
+                    let mut stream = match self.streams.0.get_mut(&pid) {
+                        Some(stream) => stream,
+                        None => return Ok(()),
+                    };
 
                     if pkt.pusi() {
-                        if !stream.buf.is_empty() {
-                            let sz = stream.buf.0.position();
+                        let pes = PES::new(buf);
 
+                        if !stream.buf.is_empty() {
+                            // can emit demuxed stream here;
                             println!(
                                 "(0x{:016X}) :pid {:?} :pts {:?} :dts {:?} :sz {}",
                                 stream.offset,
                                 stream.pid,
                                 stream.pts.map(DurationFmt::from),
                                 stream.dts.map(DurationFmt::from),
-                                sz,
+                                stream.buf.sz(),
                             );
                         }
 
                         stream.buf.reset();
-
-                        let pes = PES::new(buf);
-
+                        stream.started = true;
                         stream.offset += self.offset + raw.len() - buf.len();
                         stream.pts = pes.pts().map(Duration::from);
                         stream.dts = pes.dts().map(Duration::from);
-                        stream.buf.0.write_all(pes.buf_seek_payload())?;
-                    } else {
-                        stream.buf.0.write_all(buf)?
+
+                        buf = pes.buf_seek_payload();
+                    }
+
+                    if stream.started {
+                        stream.buf.0.write_all(buf)?;
                     }
                 }
             }
@@ -469,3 +518,6 @@ impl Demuxer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {}

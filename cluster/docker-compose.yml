@@ -11,4 +11,4 @@ services:
       dockerfile: ./cluster/tsplay/Dockerfile
       context: ..
     volumes:
-      - ../dumps/:/mnt/dumps/
+      - /tmp/va-dumps/:/mnt/dumps/
