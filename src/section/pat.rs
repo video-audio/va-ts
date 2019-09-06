@@ -127,7 +127,7 @@ pub enum PID {
 
 impl PID {
     #[inline(always)]
-    pub fn is_program_map(self) -> bool {
+    pub fn is_program_map(&self) -> bool {
         match self {
             PID::ProgramMap(..) => true,
             _ => false,

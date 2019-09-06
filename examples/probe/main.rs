@@ -195,6 +195,7 @@ impl InputUDP {
         }
     }
 
+    #[allow(unreachable_code)]
     fn demux(&mut self, ts_pkt_raw: &[u8]) -> Result<()> {
         self.demuxer.demux(ts_pkt_raw)?;
         return Ok(());
@@ -363,11 +364,6 @@ impl Input for InputUDP {
                 for pkt_index in 0..7 * ts::Packet::SZ / ts::Packet::SZ {
                     let ts_pkt_raw_src =
                         &pkts_raw[pkt_index * ts::Packet::SZ..(pkt_index + 1) * ts::Packet::SZ];
-
-                    // println!("#{:?} -> [{:?} .. {:?}]; src-len: {:?}, dst-len: {:?}",
-                    //     pkt_index, pkt_index*ts::Packet::SZ, (pkt_index+1)*ts::Packet::SZ,
-                    //     ts_pkt_raw_src.len(), ts_pkt_raw.len(),
-                    // );
 
                     ts_pkt_raw.copy_from_slice(ts_pkt_raw_src);
                     buf.push_back(ts_pkt_raw);
