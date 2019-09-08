@@ -1,7 +1,9 @@
+use std::time::Duration;
+
+use chrono::prelude::*;
+
 use crate::error::{Error, Kind as ErrorKind};
 use crate::result::Result;
-use chrono::prelude::*;
-use std::time::Duration;
 
 /// simple binary-coded decimal converter
 #[inline(always)]

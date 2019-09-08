@@ -147,6 +147,24 @@ pub enum Tag {
     Forbidden,
 }
 
+impl Tag {
+    #[inline(always)]
+    pub fn is_dvb_service(&self) -> bool {
+        match self {
+            Tag::DVB(TagDVB::Service) => true,
+            _ => false,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_dvb_short_event(&self) -> bool {
+        match self {
+            Tag::DVB(TagDVB::ShortEvent) => true,
+            _ => false,
+        }
+    }
+}
+
 impl From<u8> for Tag {
     fn from(d: u8) -> Self {
         match d {

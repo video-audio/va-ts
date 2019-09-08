@@ -4,6 +4,7 @@ mod error;
 
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::fmt;
 use std::net::{Ipv4Addr, UdpSocket};
 use std::process;
 use std::sync::{Arc, Condvar, Mutex};
@@ -184,6 +185,62 @@ impl Default for DemuxerTSEvents {
     }
 }
 
+struct EITFmt<'t>(&'t ts::DemuxedTable);
+
+impl<'t> fmt::Display for EITFmt<'t> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for section_ref in self.0.sections.0.iter() {
+            let section = (*section_ref).borrow();
+            let raw = section.buf.0.get_ref().as_slice();
+
+            let eit = ts::EIT::new(raw);
+
+            for event in eit.events().filter_map(ts::Result::ok) {
+                write!(
+                    f,
+                    "  {} ~ {}\n",
+                    event.start_time(),
+                    ts::DurationFmt::from(event.duration()),
+                )?;
+
+                if let Some(descs) = event.descriptors() {
+                    for desc in descs
+                        .filter_map(ts::Result::ok)
+                        .filter(|d| d.is_dvb_short_event())
+                    {
+                        match desc.tag() {
+                            ts::Tag::DVB(ts::TagDVB::ShortEvent) => {
+                                let desc = ts::DescDVB0x4D::new(desc.buf_data());
+
+                                let mut dst_buf = [0u8; 256];
+                                let mut dst_str = std::str::from_utf8_mut(&mut dst_buf).unwrap();
+
+                                match ts::AnnexA2::decode(desc.event_name(), &mut dst_str) {
+                                    Ok(..) => write!(f, r#"    "{}""#, dst_str),
+                                    Err(err) => write!(f, "  (error: {:?})", err),
+                                }?;
+
+                                dst_buf = [0u8; 256];
+                                dst_str = std::str::from_utf8_mut(&mut dst_buf).unwrap();
+
+                                match ts::AnnexA2::decode(desc.text(), &mut dst_str) {
+                                    Ok(..) => write!(f, r#" "{}""#, dst_str),
+                                    Err(err) => write!(f, " (error: {})", err),
+                                }?;
+
+                                write!(f, "\n")?;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl ts::DemuxerEvents for DemuxerTSEvents {
     fn on_table(&mut self, id: ts::SubtableID, tbl: &ts::DemuxedTable) {
         if self.done_once.contains(&id) {
@@ -192,24 +249,31 @@ impl ts::DemuxerEvents for DemuxerTSEvents {
             self.done_once.insert(id);
         }
 
-        for section_ref in tbl.sections.0.iter() {
-            let section = (*section_ref).borrow();
-            let raw = section.buf.0.get_ref().as_slice();
+        match id {
+            ts::SubtableID::EIT(..) => {
+                print!(":EIT\n{}", EITFmt(tbl));
+            }
+            _ => {
+                for section_ref in tbl.sections.0.iter() {
+                    let section = (*section_ref).borrow();
+                    let raw = section.buf.0.get_ref().as_slice();
 
-            match id {
-                ts::SubtableID::PAT(..) => {
-                    println!("{:?}", ts::PAT::new(raw));
+                    match id {
+                        ts::SubtableID::PAT(..) => {
+                            println!("{:?}", ts::PAT::new(raw));
+                        }
+                        ts::SubtableID::SDT(..) => {
+                            println!("{:?}", ts::SDT::new(raw));
+                        }
+                        ts::SubtableID::PMT(..) => {
+                            println!("{:?}", ts::PMT::new(raw));
+                        }
+                        ts::SubtableID::EIT(..) => {
+                            println!("{:?}", ts::EIT::new(raw));
+                        }
+                    };
                 }
-                ts::SubtableID::SDT(..) => {
-                    println!("{:?}", ts::SDT::new(raw));
-                }
-                ts::SubtableID::EIT(..) => {
-                    println!("{:?}", ts::EIT::new(raw));
-                }
-                ts::SubtableID::PMT(..) => {
-                    println!("{:?}", ts::PMT::new(raw));
-                }
-            };
+            }
         }
     }
 

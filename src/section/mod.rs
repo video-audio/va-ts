@@ -15,4 +15,4 @@ pub use self::pat::PAT;
 pub use self::pmt::PMT;
 pub use self::sdt::SDT;
 pub use self::traits::{Bufer, Cursor, Szer, TryNewer};
-pub(crate) use self::traits::{WithHeader, WithSyntaxSection};
+pub use self::traits::{WithHeader, WithSyntaxSection};

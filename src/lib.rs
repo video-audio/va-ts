@@ -18,14 +18,16 @@ mod stream_type;
 mod subtable_id;
 mod table_id;
 
+pub use annex_a2::AnnexA2;
 pub use demuxer::{Demuxer, DemuxerEvents, Packet as DemuxedPacket, Table as DemuxedTable};
+pub use descriptor::{DescDVB0x48, DescDVB0x4D, Tag, TagDVB};
 pub use duration_fmt::DurationFmt;
 pub use packet::Packet;
 pub use pes::PES;
 pub use pid::PID;
 pub use result::Result;
 pub use section::Bufer;
-pub use section::{EIT, PAT, PMT, SDT};
+pub use section::{WithHeader, WithSyntaxSection, EIT, PAT, PMT, SDT};
 pub use stream_type::StreamType;
 pub use subtable_id::SubtableID;
 pub use table_id::TableID;

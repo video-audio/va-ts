@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::convert::Into;
 use std::error::Error as StdError;
 use std::fmt;
+use std::fmt::Error as FmtError;
 use std::io::Error as IoError;
 use std::result::Result as StdResult;
 use std::str::Utf8Error;
@@ -25,6 +26,7 @@ pub enum Kind {
     InputUrlMissingHost,
     InputUrlHostMustBeDomain,
     Io(IoError),
+    Fmt(FmtError),
     Encoding(Utf8Error),
     SyncPoison, // TODO: rewrite
     Ts(TsError),
@@ -38,8 +40,7 @@ pub struct Error {
 }
 
 impl Error {
-    pub fn new(kind: Kind) -> Error
-    {
+    pub fn new(kind: Kind) -> Error {
         Error {
             kind: kind,
             details: None,
@@ -65,8 +66,7 @@ impl fmt::Display for Error {
 
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, r#"(:error {:?} ("{}""#,
-            self.kind, self.description())?;
+        write!(f, r#"(:error {:?} ("{}""#, self.kind, self.description())?;
 
         if let Some(details) = self.details.as_ref() {
             write!(f, r#" "{}""#, details)?;
@@ -83,6 +83,7 @@ impl StdError for Error {
             Kind::InputUrlHostMustBeDomain => "provided host must be valid domain",
             Kind::Encoding(ref err) => err.description(),
             Kind::Io(ref err) => err.description(),
+            Kind::Fmt(ref err) => err.description(),
             Kind::SyncPoison => "sync lock/condvar poison error",
             Kind::Ts(ref err) => err.description(),
 
@@ -96,6 +97,7 @@ impl StdError for Error {
             Kind::InputUrlHostMustBeDomain => None,
             Kind::Encoding(ref err) => Some(err),
             Kind::Io(ref err) => Some(err),
+            Kind::Fmt(ref err) => Some(err),
             Kind::SyncPoison => None,
             Kind::Ts(ref err) => Some(err),
 
@@ -106,6 +108,7 @@ impl StdError for Error {
 
 from!(Utf8Error, Kind::Encoding);
 from!(IoError, Kind::Io);
+from!(FmtError, Kind::Fmt);
 from!(TsError, Kind::Ts);
 
 impl<B> From<Box<B>> for Error

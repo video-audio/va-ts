@@ -12,7 +12,7 @@ pub const HEADER_SZ: usize = 3;
 #[allow(dead_code)]
 pub const HEADER_MAX_SECTION_LENGTH: usize = 0x3FD; // 1021
 
-pub(crate) trait WithHeader<'buf>: Bufer<'buf> {
+pub trait WithHeader<'buf>: Bufer<'buf> {
     /// buffer seeked
     #[inline(always)]
     fn b(&self) -> &'buf [u8] {
@@ -62,7 +62,7 @@ pub trait WithTableIDExtension<'buf>: Bufer<'buf> {
 
 pub const SYNTAX_SECTION_SZ: usize = 5;
 
-pub(crate) trait WithSyntaxSection<'buf>: Bufer<'buf> {
+pub trait WithSyntaxSection<'buf>: Bufer<'buf> {
     /// buffer seeked
     #[inline(always)]
     fn b(&self) -> &'buf [u8] {

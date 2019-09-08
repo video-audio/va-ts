@@ -16,15 +16,15 @@ use crate::error::{Error, Kind as ErrorKind};
 use crate::result::Result;
 use crate::section::{Szer, TryNewer};
 
-use self::desc_0x0a::Desc0x0A;
-use self::desc_dvb_0x48::DescDVB0x48;
-use self::desc_dvb_0x4d::DescDVB0x4D;
-use self::desc_dvb_0x4e::DescDVB0x4E;
-use self::desc_dvb_0x53::DescDVB0x53;
-use self::desc_dvb_0x54::DescDVB0x54;
-use self::desc_dvb_0x56::DescDVB0x56;
-use self::desc_dvb_0x6a::DescDVB0x6A;
-use self::tag::{Tag, TagDVB};
+pub use self::desc_0x0a::Desc0x0A;
+pub use self::desc_dvb_0x48::DescDVB0x48;
+pub use self::desc_dvb_0x4d::DescDVB0x4D;
+pub use self::desc_dvb_0x4e::DescDVB0x4E;
+pub use self::desc_dvb_0x53::DescDVB0x53;
+pub use self::desc_dvb_0x54::DescDVB0x54;
+pub use self::desc_dvb_0x56::DescDVB0x56;
+pub use self::desc_dvb_0x6a::DescDVB0x6A;
+pub use self::tag::{Tag, TagDVB};
 
 #[derive(Clone)]
 pub struct Descriptor<'buf> {
@@ -51,8 +51,18 @@ impl<'buf> Descriptor<'buf> {
     }
 
     #[inline(always)]
-    fn tag(&self) -> Tag {
+    pub fn tag(&self) -> Tag {
         Tag::from(self.buf[0])
+    }
+
+    #[inline(always)]
+    pub fn is_dvb_service(&self) -> bool {
+        self.tag().is_dvb_service()
+    }
+
+    #[inline(always)]
+    pub fn is_dvb_short_event(&self) -> bool {
+        self.tag().is_dvb_short_event()
     }
 
     #[inline(always)]
@@ -62,7 +72,7 @@ impl<'buf> Descriptor<'buf> {
 
     /// seek
     #[inline(always)]
-    fn buf_data(&self) -> &'buf [u8] {
+    pub fn buf_data(&self) -> &'buf [u8] {
         &self.buf[Self::HEADER_SZ..]
     }
 

@@ -39,7 +39,7 @@ impl<'buf> DescDVB0x4D<'buf> {
     }
 
     #[inline(always)]
-    fn event_name(&self) -> &'buf [u8] {
+    pub fn event_name(&self) -> &'buf [u8] {
         &self.buf[self.buf_pos_event_name()..self.buf_pos_text_length()]
     }
 
@@ -49,7 +49,7 @@ impl<'buf> DescDVB0x4D<'buf> {
     }
 
     #[inline(always)]
-    fn text(&self) -> &'buf [u8] {
+    pub fn text(&self) -> &'buf [u8] {
         let lft = self.buf_pos_text();
         let rght = lft + (self.text_length() as usize);
         &self.buf[lft..rght]
