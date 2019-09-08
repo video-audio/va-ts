@@ -49,6 +49,14 @@ impl PID {
             _ => false,
         }
     }
+
+    #[inline(always)]
+    pub fn is_other(self) -> bool {
+        match self {
+            PID::Other(..) => true,
+            _ => false,
+        }
+    }
 }
 
 impl From<u16> for PID {

@@ -4,8 +4,7 @@ use std::io::{Cursor, Write};
 use std::rc::Rc;
 use std::time::Duration;
 
-use crate::duration_fmt::DurationFmt;
-use crate::packet::Packet;
+use crate::packet::Packet as TsPacket;
 use crate::pes::PES;
 use crate::pid::PID;
 use crate::result::Result;
@@ -13,7 +12,7 @@ use crate::section::{WithHeader, WithSyntaxSection};
 use crate::subtable_id::{SubtableID, SubtableIDer};
 use crate::{EIT, PAT, PMT, SDT};
 
-struct Buf(Cursor<Vec<u8>>);
+pub struct Buf(pub Cursor<Vec<u8>>);
 
 impl Buf {
     #[inline(always)]
@@ -28,7 +27,7 @@ impl Buf {
     }
 
     #[inline(always)]
-    fn sz(&self) -> usize {
+    pub fn sz(&self) -> usize {
         self.0.position() as usize
     }
 }
@@ -39,7 +38,7 @@ impl Default for Buf {
     }
 }
 
-struct Section {
+pub struct Section {
     /// parent table-id
     table_id: SubtableID,
 
@@ -49,7 +48,7 @@ struct Section {
     /// full section size with header, data, CRC
     sz: usize,
 
-    buf: Buf,
+    pub buf: Buf,
 }
 
 impl Section {
@@ -82,7 +81,7 @@ impl Section {
 
 type SectionRef = Rc<RefCell<Box<Section>>>;
 
-struct Sections(Vec<SectionRef>);
+pub struct Sections(pub Vec<SectionRef>);
 
 impl Sections {
     #[inline(always)]
@@ -104,10 +103,10 @@ impl Default for Sections {
     }
 }
 
-struct Table {
+pub struct Table {
     /// mpeg-ts last-section-number
     last_section_number: u8,
-    sections: Sections,
+    pub sections: Sections,
 }
 
 impl Table {
@@ -124,7 +123,12 @@ impl Table {
             0 => false,
             n => {
                 let last = (&self.sections.0[n - 1]).borrow();
-                last.number == self.last_section_number && last.done()
+                let first = (&self.sections.0[0]).borrow();
+
+                first.number == 0
+                    && last.number == self.last_section_number
+                    && first.done()
+                    && last.done()
             }
         }
     }
@@ -147,26 +151,26 @@ impl Default for Tables {
     }
 }
 
-struct Stream {
-    pid: PID,
+pub struct Packet {
+    pub pid: PID,
 
-    offset: usize,
+    pub offset: usize,
 
     /// presentation time stamp
-    pts: Option<Duration>,
+    pub pts: Option<Duration>,
 
     /// decode time stamp
-    dts: Option<Duration>,
+    pub dts: Option<Duration>,
 
-    buf: Buf,
+    pub buf: Buf,
 
     /// got ts PUSI
     started: bool,
 }
 
-impl Stream {
-    fn new(pid: PID) -> Stream {
-        Stream {
+impl Packet {
+    fn new(pid: PID) -> Packet {
+        Packet {
             pid,
             offset: 0,
             pts: None,
@@ -178,11 +182,11 @@ impl Stream {
 }
 
 #[derive(Default)]
-struct Streams(HashMap<PID, Stream>);
+struct Packets(HashMap<PID, Packet>);
 
-/// ((pid, packet-constructed), all-packets-constructed)
+/// pid, packet-constructed
 #[derive(Debug)]
-struct PMTPids(Vec<(PID, bool)>, bool);
+struct PMTPids(Vec<(PID, bool)>);
 
 impl PMTPids {
     #[inline(always)]
@@ -196,17 +200,45 @@ impl PMTPids {
             self.0.push((pid, false))
         }
     }
+
+    /// got pid? and pid is parsed and packet builded
+    #[inline(always)]
+    fn is_packet_builded(&self, pid: PID) -> Option<bool> {
+        self.0.iter().find(|p| p.0 == pid).map(|p| p.1)
+    }
+
+    #[inline(always)]
+    fn set_is_packet_builded(&mut self, pid: PID, v: bool) {
+        if let Some(p) = self.0.iter_mut().find(|p| p.0 == pid) {
+            p.1 = v;
+        }
+    }
+
+    /// all pids are parsed?
+    #[inline(always)]
+    #[allow(dead_code)]
+    fn are_all_packets_builded(&self) -> bool {
+        !self.0.iter().any(|p| !(*p).1)
+    }
 }
 
 impl Default for PMTPids {
     fn default() -> Self {
-        PMTPids(Vec::with_capacity(3), false)
+        PMTPids(Vec::with_capacity(3))
     }
+}
+
+pub trait DemuxerEvents {
+    fn on_table(&mut self, _: SubtableID, _: &Table) {}
+    fn on_packet(&mut self, _: &Packet) {}
 }
 
 /// TODO: use tree, redix tree here
 /// TODO: add benches
-pub struct Demuxer {
+pub struct Demuxer<T>
+where
+    T: DemuxerEvents,
+{
     offset: usize,
 
     pat: Tables,
@@ -221,15 +253,22 @@ pub struct Demuxer {
     #[allow(dead_code)]
     bat: Tables,
 
+    packets: Packets,
+
     // TODO: add PID with state(is-parsed or not)
     //       for multiple PMTs
     pmt_pids: PMTPids,
 
-    streams: Streams,
+    events: T,
 }
 
-impl Default for Demuxer {
-    fn default() -> Self {
+unsafe impl<T> Send for Demuxer<T> where T: DemuxerEvents {}
+
+impl<T> Demuxer<T>
+where
+    T: DemuxerEvents,
+{
+    pub fn new(events: T) -> Demuxer<T> {
         Demuxer {
             offset: 0,
 
@@ -243,16 +282,10 @@ impl Default for Demuxer {
 
             pmt_pids: Default::default(),
 
-            streams: Default::default(),
+            packets: Default::default(),
+
+            events,
         }
-    }
-}
-
-unsafe impl Send for Demuxer {}
-
-impl Demuxer {
-    pub fn new() -> Demuxer {
-        Default::default()
     }
 
     /// cache pmt pids
@@ -279,11 +312,11 @@ impl Demuxer {
         }
     }
 
-    /// cache streams
+    /// build packets cache
     // TODO: also do via iterator
     // TODO: .iter().collect() for lazy collection
     #[inline(always)]
-    fn build_streams(&mut self, _pid: PID) {
+    fn build_packets(&mut self) {
         for (_, table) in self.pmt.map.iter() {
             for section_ref in table.sections.0.iter() {
                 let section = (*section_ref).borrow();
@@ -296,22 +329,19 @@ impl Demuxer {
                     .filter_map(Result::ok)
                     .map(|s| PID::from(s.pid()))
                 {
-                    self.streams
+                    self.packets
                         .0
                         .entry(pid)
-                        .or_insert_with(|| Stream::new(pid));
+                        .or_insert_with(|| Packet::new(pid));
                 }
             }
         }
     }
 
-    /// mutably borrow a reference to the underlying tables
-    /// by pid
-    fn with_tables_mut<F>(&mut self, pid_or_pmt: (PID, bool), f: F) -> Result<()>
-    where
-        F: Fn(&mut Tables) -> Result<()>,
-    {
-        f(match pid_or_pmt {
+    // TODO: move to macros?
+    #[inline(always)]
+    fn demux_section(&mut self, pid_or_pmt: (PID, bool), pkt: &TsPacket) -> Result<()> {
+        let tables = match pid_or_pmt {
             (PID::PAT, false) => &mut self.pat,
             (PID::SDT, false) => &mut self.sdt,
             (PID::EIT, false) => &mut self.eit,
@@ -319,133 +349,125 @@ impl Demuxer {
             (PID::CAT, false) => &mut self.cat,
             (_, true) => &mut self.pmt,
             _ => unreachable!(),
-        })
-    }
+        };
 
-    // TODO: move to macros?
-    #[inline(always)]
-    fn demux_section(&mut self, pid_or_pmt: (PID, bool), pkt: &Packet) -> Result<()> {
         let buf = pkt.buf_payload_section()?;
 
-        self.with_tables_mut(pid_or_pmt, |tables| {
-            if pkt.pusi() {
-                let (id, sz, section_number, last_section_number) = match pid_or_pmt {
-                    (PID::PAT, false) => {
-                        let s = PAT::try_new(buf)?;
-                        (
-                            s.subtable_id(),
-                            s.sz(),
-                            s.section_number(),
-                            s.last_section_number(),
-                        )
-                    }
-                    (PID::SDT, false) => {
-                        let s = SDT::try_new(buf)?;
-                        (
-                            s.subtable_id(),
-                            s.sz(),
-                            s.section_number(),
-                            s.last_section_number(),
-                        )
-                    }
-                    (PID::EIT, false) => {
-                        let s = EIT::try_new(buf)?;
-                        (
-                            s.subtable_id(),
-                            s.sz(),
-                            s.section_number(),
-                            s.last_section_number(),
-                        )
-                    }
-                    (_, true) => {
-                        let s = PMT::try_new(buf)?;
-                        (
-                            s.subtable_id(),
-                            s.sz(),
-                            s.section_number(),
-                            s.last_section_number(),
-                        )
-                    }
-                    _ => unreachable!(),
+        if pkt.pusi() {
+            let (id, sz, section_number, last_section_number) = match pid_or_pmt {
+                (PID::PAT, false) => {
+                    let s = PAT::try_new(buf)?;
+                    (
+                        s.subtable_id(),
+                        s.sz(),
+                        s.section_number(),
+                        s.last_section_number(),
+                    )
+                }
+                (PID::SDT, false) => {
+                    let s = SDT::try_new(buf)?;
+                    (
+                        s.subtable_id(),
+                        s.sz(),
+                        s.section_number(),
+                        s.last_section_number(),
+                    )
+                }
+                (PID::EIT, false) => {
+                    let s = EIT::try_new(buf)?;
+                    (
+                        s.subtable_id(),
+                        s.sz(),
+                        s.section_number(),
+                        s.last_section_number(),
+                    )
+                }
+                (_, true) => {
+                    let s = PMT::try_new(buf)?;
+                    (
+                        s.subtable_id(),
+                        s.sz(),
+                        s.section_number(),
+                        s.last_section_number(),
+                    )
+                }
+                _ => unreachable!(),
+            };
+
+            let table = tables
+                .map
+                .entry(id)
+                .or_insert_with(|| Table::new(last_section_number));
+
+            let section_ref = match table.sections.get_mut(section_number) {
+                Some(section_ref) => {
+                    let mut section = (*section_ref).borrow_mut();
+                    section.buf.reset();
+                    section.sz = sz;
+
+                    section_ref.clone()
+                }
+                None => {
+                    let section_ref = Section::new(id, section_number, sz).into_ref();
+                    table.sections.push(section_ref.clone());
+                    section_ref
+                }
+            };
+
+            tables.current = Some(section_ref);
+        }
+
+        if let Some(section_ref) = &tables.current {
+            {
+                let mut section = (*section_ref).borrow_mut();
+                let sz_need = section.sz_need();
+
+                // remove null/padding bytes
+                let buf = if buf.len() > sz_need {
+                    &buf[0..sz_need]
+                } else {
+                    buf
                 };
 
-                let table = tables
-                    .map
-                    .entry(id)
-                    .or_insert_with(|| Table::new(last_section_number));
-
-                let section_ref = match table.sections.get_mut(section_number) {
-                    Some(section_ref) => {
-                        let mut section = (*section_ref).borrow_mut();
-                        section.buf.reset();
-                        section.sz = sz;
-
-                        section_ref.clone()
-                    }
-                    None => {
-                        let section_ref = Section::new(id, section_number, sz).into_ref();
-                        table.sections.push(section_ref.clone());
-                        section_ref
-                    }
-                };
-
-                tables.current = Some(section_ref);
+                section.buf.0.write_all(buf)?;
             }
 
-            if let Some(section_ref) = &tables.current {
-                {
-                    let mut section = (*section_ref).borrow_mut();
-                    let sz_need = section.sz_need();
-
-                    // remove null/padding bytes
-                    let buf = if buf.len() > sz_need {
-                        &buf[0..sz_need]
-                    } else {
-                        buf
-                    };
-
-                    section.buf.0.write_all(buf)?;
-                }
-
-                {
-                    let section = (*section_ref).borrow();
-                    if section.done() {
-                        if let Some(table) = tables.map.get(&section.table_id) {
-                            if table.done() {
-                                // can emit demuxed table here;
-
-                                for section_ref in table.sections.0.iter() {
-                                    let section = (*section_ref).borrow();
-                                    let raw = section.buf.0.get_ref().as_slice();
-
-                                    match pid_or_pmt {
-                                        (PID::PAT, false) => println!("{:?}", PAT::new(raw)),
-                                        (PID::SDT, false) => println!("{:?}", SDT::new(raw)),
-                                        (PID::EIT, false) => println!("{:?}", EIT::new(raw)),
-                                        (_, true) => println!("{:?}", PMT::new(raw)),
-                                        _ => {}
-                                    };
-                                }
-                            }
+            {
+                let section = (*section_ref).borrow();
+                if section.done() {
+                    if let Some(table) = tables.map.get(&section.table_id) {
+                        if table.done() {
+                            // emit
+                            self.events.on_table(section.table_id, &table);
                         }
                     }
                 }
             }
-
-            Ok(())
-        })?;
+        }
 
         Ok(())
     }
 
     pub fn demux(&mut self, raw: &[u8]) -> Result<()> {
+        if self.demux_tables(raw)? {
+            return Ok(());
+        }
+
+        self.demux_packets(raw)
+    }
+
+    /// ffmpeg::avformat_open_input analog
+    /// probe input
+    /// return: is pid handled?
+    pub fn demux_tables(&mut self, raw: &[u8]) -> Result<(bool)> {
         self.offset += raw.len();
 
-        let pkt = Packet::new(&raw)?;
+        let pkt = TsPacket::new(&raw)?;
         let pid = pkt.pid();
 
         if pid.is_null() {
-            return Ok(());
+            // null packet PID
+            return Ok(true);
         }
 
         match pid {
@@ -455,7 +477,7 @@ impl Demuxer {
                 // extract pids from PAT
                 if self.pmt_pids.0.is_empty() {
                     self.pmt_pids.0.clear();
-                    self.streams.0.clear();
+                    self.packets.0.clear();
                     self.build_pmt_pids();
                 }
             }
@@ -464,55 +486,73 @@ impl Demuxer {
 
             PID::Other(..) => {
                 // PAT not ready yet
+                // wait for PAT
                 if self.pmt_pids.0.is_empty() {
-                    return Ok(());
+                    return Ok(true);
                 }
 
-                if self.pmt_pids.has(pid) {
-                    self.demux_section((pid, true), &pkt)?;
+                match self.pmt_pids.is_packet_builded(pid) {
+                    Some(true) => { // got PMT and already builded
+                        self.demux_section((pid, true), &pkt)?;
+                    },
+                    Some(false) => { // got PMT and not builded
+                        self.demux_section((pid, true), &pkt)?;
 
-                    if self.streams.0.is_empty() {
-                        self.build_streams(pid);
-                    }
+                        self.build_packets();
 
-                } else {
-                    let mut buf = pkt.buf_payload_pes()?;
-
-                    let mut stream = match self.streams.0.get_mut(&pid) {
-                        Some(stream) => stream,
-                        None => return Ok(()),
-                    };
-
-                    if pkt.pusi() {
-                        let pes = PES::new(buf);
-
-                        if !stream.buf.is_empty() {
-                            // can emit demuxed stream here;
-                            println!(
-                                "(0x{:016X}) :pid {:?} :pts {:?} :dts {:?} :sz {}",
-                                stream.offset,
-                                stream.pid,
-                                stream.pts.map(DurationFmt::from),
-                                stream.dts.map(DurationFmt::from),
-                                stream.buf.sz(),
-                            );
-                        }
-
-                        stream.buf.reset();
-                        stream.started = true;
-                        stream.offset += self.offset + raw.len() - buf.len();
-                        stream.pts = pes.pts().map(Duration::from);
-                        stream.dts = pes.dts().map(Duration::from);
-
-                        buf = pes.buf_seek_payload();
-                    }
-
-                    if stream.started {
-                        stream.buf.0.write_all(buf)?;
-                    }
+                        self.pmt_pids.set_is_packet_builded(pid, true);
+                    },
+                    None => {return Ok(false); }
                 }
             }
-            _ => return Ok(()),
+            _ => {}
+        }
+
+        Ok(true)
+    }
+
+    /// ffmpeg::av_read_frame analog
+    pub fn demux_packets(&mut self, raw: &[u8]) -> Result<()> {
+        self.offset += raw.len();
+
+        let pkt = TsPacket::new(&raw)?;
+        let pid = pkt.pid();
+
+        if pid.is_null() // null packet PID
+        && !pid.is_other() // PID is section/table PID
+        // PAT not ready yet
+        // wait for pat
+        && !self.pmt_pids.0.is_empty()
+        {
+            return Ok(());
+        }
+
+        let mut packet = match self.packets.0.get_mut(&pid) {
+            Some(packet) => packet,
+            None => return Ok(()), // packet is not builder - wait fot PMT
+        };
+
+        let mut buf = pkt.buf_payload_pes()?;
+
+        if pkt.pusi() {
+            let pes = PES::new(buf);
+
+            if !packet.buf.is_empty() {
+                // emit
+                self.events.on_packet(packet);
+            }
+
+            packet.buf.reset();
+            packet.started = true;
+            packet.offset += self.offset + raw.len() - buf.len();
+            packet.pts = pes.pts().map(Duration::from);
+            packet.dts = pes.dts().map(Duration::from);
+
+            buf = pes.buf_seek_payload();
+        }
+
+        if packet.started {
+            packet.buf.0.write_all(buf)?;
         }
 
         Ok(())

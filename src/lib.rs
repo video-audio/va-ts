@@ -18,7 +18,7 @@ mod stream_type;
 mod subtable_id;
 mod table_id;
 
-pub use demuxer::Demuxer;
+pub use demuxer::{Demuxer, DemuxerEvents, Packet as DemuxedPacket, Table as DemuxedTable};
 pub use duration_fmt::DurationFmt;
 pub use packet::Packet;
 pub use pes::PES;
@@ -27,4 +27,5 @@ pub use result::Result;
 pub use section::Bufer;
 pub use section::{EIT, PAT, PMT, SDT};
 pub use stream_type::StreamType;
+pub use subtable_id::SubtableID;
 pub use table_id::TableID;

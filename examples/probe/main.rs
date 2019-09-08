@@ -2,8 +2,8 @@ extern crate va_ts as ts;
 
 mod error;
 
+use std::collections::HashSet;
 use std::collections::VecDeque;
-use std::io::{Cursor, Write};
 use std::net::{Ipv4Addr, UdpSocket};
 use std::process;
 use std::sync::{Arc, Condvar, Mutex};
@@ -15,142 +15,142 @@ use url::{Host, Url};
 
 use error::{Error, Kind as ErrorKind, Result};
 
-struct Packet {
-    offset: usize,
+// struct Packet {
+//     offset: usize,
 
-    /// presentation time stamp
-    pts: Option<Duration>,
+//     /// presentation time stamp
+//     pts: Option<Duration>,
 
-    /// decode time stamp
-    dts: Option<Duration>,
+//     /// decode time stamp
+//     dts: Option<Duration>,
 
-    /// reusable buffer to collect payload
-    buf: Cursor<Vec<u8>>,
-}
+//     /// reusable buffer to collect payload
+//     buf: Cursor<Vec<u8>>,
+// }
 
-impl Packet {
-    fn new() -> Packet {
-        Packet {
-            offset: 0,
-            pts: None,
-            dts: None,
-            buf: Cursor::new(Vec::with_capacity(2048)),
-        }
-    }
+// impl Packet {
+//     fn new() -> Packet {
+//         Packet {
+//             offset: 0,
+//             pts: None,
+//             dts: None,
+//             buf: Cursor::new(Vec::with_capacity(2048)),
+//         }
+//     }
 
-    #[inline(always)]
-    fn buf_reset(&mut self) {
-        self.buf.set_position(0);
-        self.buf.get_mut().clear();
-    }
+//     #[inline(always)]
+//     fn buf_reset(&mut self) {
+//         self.buf.set_position(0);
+//         self.buf.get_mut().clear();
+//     }
 
-    #[inline(always)]
-    fn is_empty(&self) -> bool {
-        self.buf.position() == 0
-    }
-}
-
-struct Track {
-    /// ID/PID
-    ///   - PID for mpegts
-    ///   - ID for RTMP/HLS, DASH, MP4
-    id: u16,
-
-    // TODO: add codec
-    // codec: Codec,
-    pkt: Packet,
-    // dbg_file: File,
-}
-
-impl Track {
-    fn new(id: u16) -> Track {
-        Track {
-            id: id,
-            pkt: Packet::new(),
-            // dbg_file: File::create(format!("/tmp/dump-{}.h264", id)).unwrap(),
-        }
-    }
-}
-
-struct Stream {
-    /// current global offset
-    /// aka bytes-processed / bytes-readen
-    offset: usize,
-
-    tracks: Vec<Track>,
-}
-
-impl Stream {
-    fn new() -> Stream {
-        Stream {
-            offset: 0,
-            tracks: Vec::new(),
-        }
-    }
-}
-
-pub struct TS {
-    pat_buf: Cursor<Vec<u8>>,
-    pmt_buf: Cursor<Vec<u8>>,
-    sdt_buf: Cursor<Vec<u8>>,
-    eit_buf: Cursor<Vec<u8>>,
-
-    stream: Option<Stream>,
-}
-
-impl TS {
-    fn new() -> TS {
-        TS {
-            pat_buf: Cursor::new(Vec::with_capacity(ts::Packet::SZ)),
-            pmt_buf: Cursor::new(Vec::with_capacity(ts::Packet::SZ)),
-            sdt_buf: Cursor::new(Vec::with_capacity(ts::Packet::SZ)),
-            eit_buf: Cursor::new(Vec::with_capacity(384)),
-
-            stream: None,
-        }
-    }
-
-    fn pat(&self) -> Option<ts::PAT> {
-        if self.pat_buf.position() == 0 {
-            None
-        } else {
-            Some(ts::PAT::new(self.pat_buf.get_ref().as_slice()))
-        }
-    }
-
-    fn pmt(&self) -> Option<ts::PMT> {
-        if self.pmt_buf.position() == 0 {
-            None
-        } else {
-            Some(ts::PMT::new(self.pmt_buf.get_ref().as_slice()))
-        }
-    }
-
-    fn pmt_pid(&self) -> Option<u16> {
-        self.pat().and_then(|p| p.first_program_map_pid())
-    }
-
-    fn sdt(&self) -> Option<ts::SDT> {
-        if self.sdt_buf.position() == 0 {
-            None
-        } else {
-            Some(ts::SDT::new(self.sdt_buf.get_ref().as_slice()))
-        }
-    }
-
-    /// are PAT, PMT, \[SDT\], stream builded?
-    fn can_demux(&self) -> bool {
-        self.pat().is_some() && self.pmt().is_some() && self.stream.is_some()
-    }
-}
-
-// struct DemuxerTS {}
-
-// impl DemuxerTS {
-//     pub fn new() -> DemuxerTS {
-//         DemuxerTS {}
+//     #[inline(always)]
+//     fn is_empty(&self) -> bool {
+//         self.buf.position() == 0
 //     }
 // }
+
+// struct Track {
+//     /// ID/PID
+//     ///   - PID for mpegts
+//     ///   - ID for RTMP/HLS, DASH, MP4
+//     id: u16,
+
+//     // TODO: add codec
+//     // codec: Codec,
+//     pkt: Packet,
+//     // dbg_file: File,
+// }
+
+// impl Track {
+//     fn new(id: u16) -> Track {
+//         Track {
+//             id: id,
+//             pkt: Packet::new(),
+//             // dbg_file: File::create(format!("/tmp/dump-{}.h264", id)).unwrap(),
+//         }
+//     }
+// }
+
+// struct Stream {
+//     /// current global offset
+//     /// aka bytes-processed / bytes-readen
+//     offset: usize,
+
+//     tracks: Vec<Track>,
+// }
+
+// impl Stream {
+//     fn new() -> Stream {
+//         Stream {
+//             offset: 0,
+//             tracks: Vec::new(),
+//         }
+//     }
+// }
+
+// pub struct TS {
+//     pat_buf: Cursor<Vec<u8>>,
+//     pmt_buf: Cursor<Vec<u8>>,
+//     sdt_buf: Cursor<Vec<u8>>,
+//     eit_buf: Cursor<Vec<u8>>,
+
+//     stream: Option<Stream>,
+// }
+
+// impl TS {
+//     fn new() -> TS {
+//         TS {
+//             pat_buf: Cursor::new(Vec::with_capacity(ts::Packet::SZ)),
+//             pmt_buf: Cursor::new(Vec::with_capacity(ts::Packet::SZ)),
+//             sdt_buf: Cursor::new(Vec::with_capacity(ts::Packet::SZ)),
+//             eit_buf: Cursor::new(Vec::with_capacity(384)),
+
+//             stream: None,
+//         }
+//     }
+
+//     fn pat(&self) -> Option<ts::PAT> {
+//         if self.pat_buf.position() == 0 {
+//             None
+//         } else {
+//             Some(ts::PAT::new(self.pat_buf.get_ref().as_slice()))
+//         }
+//     }
+
+//     fn pmt(&self) -> Option<ts::PMT> {
+//         if self.pmt_buf.position() == 0 {
+//             None
+//         } else {
+//             Some(ts::PMT::new(self.pmt_buf.get_ref().as_slice()))
+//         }
+//     }
+
+//     fn pmt_pid(&self) -> Option<u16> {
+//         self.pat().and_then(|p| p.first_program_map_pid())
+//     }
+
+//     fn sdt(&self) -> Option<ts::SDT> {
+//         if self.sdt_buf.position() == 0 {
+//             None
+//         } else {
+//             Some(ts::SDT::new(self.sdt_buf.get_ref().as_slice()))
+//         }
+//     }
+
+//     /// are PAT, PMT, \[SDT\], stream builded?
+//     fn can_demux(&self) -> bool {
+//         self.pat().is_some() && self.pmt().is_some() && self.stream.is_some()
+//     }
+// }
+
+// // struct DemuxerTS {}
+
+// // impl DemuxerTS {
+// //     pub fn new() -> DemuxerTS {
+// //         DemuxerTS {}
+// //     }
+// // }
 
 trait Input {
     fn open(&mut self) -> Result<()>;
@@ -172,15 +172,66 @@ trait Input {
 //     fn produce_frm(&self);
 // }
 
+struct DemuxerTSEvents {
+    done_once: HashSet<ts::SubtableID>,
+}
+
+impl Default for DemuxerTSEvents {
+    fn default() -> Self {
+        DemuxerTSEvents {
+            done_once: Default::default(),
+        }
+    }
+}
+
+impl ts::DemuxerEvents for DemuxerTSEvents {
+    fn on_table(&mut self, id: ts::SubtableID, tbl: &ts::DemuxedTable) {
+        if self.done_once.contains(&id) {
+            return;
+        } else {
+            self.done_once.insert(id);
+        }
+
+        for section_ref in tbl.sections.0.iter() {
+            let section = (*section_ref).borrow();
+            let raw = section.buf.0.get_ref().as_slice();
+
+            match id {
+                ts::SubtableID::PAT(..) => {
+                    println!("{:?}", ts::PAT::new(raw));
+                }
+                ts::SubtableID::SDT(..) => {
+                    println!("{:?}", ts::SDT::new(raw));
+                }
+                ts::SubtableID::EIT(..) => {
+                    println!("{:?}", ts::EIT::new(raw));
+                }
+                ts::SubtableID::PMT(..) => {
+                    println!("{:?}", ts::PMT::new(raw));
+                }
+            };
+        }
+    }
+
+    fn on_packet(&mut self, pkt: &ts::DemuxedPacket) {
+        println!(
+            "(0x{:016X}) :pid {:?} :pts {:?} :dts {:?} :sz {}",
+            pkt.offset,
+            pkt.pid,
+            pkt.pts.map(ts::DurationFmt::from),
+            pkt.dts.map(ts::DurationFmt::from),
+            pkt.buf.sz(),
+        );
+    }
+}
+
 struct InputUDP {
     url: Url,
 
     // circullar-buffer / fifo
     buf: Arc<(Mutex<VecDeque<[u8; ts::Packet::SZ]>>, Condvar)>,
 
-    ts: TS,
-
-    demuxer: ts::Demuxer,
+    demuxer: ts::Demuxer<DemuxerTSEvents>,
 }
 
 impl InputUDP {
@@ -189,125 +240,8 @@ impl InputUDP {
             url: url,
             buf: Arc::new((Mutex::new(VecDeque::with_capacity(buf_cap)), Condvar::new())),
 
-            ts: TS::new(),
-
-            demuxer: ts::Demuxer::new(),
+            demuxer: ts::Demuxer::new(Default::default()),
         }
-    }
-
-    #[allow(unreachable_code)]
-    fn demux(&mut self, ts_pkt_raw: &[u8]) -> Result<()> {
-        self.demuxer.demux(ts_pkt_raw)?;
-        return Ok(());
-
-        let pkt = ts::Packet::new(&ts_pkt_raw)?;
-
-        if let Some(pcr) = pkt.pcr()? {
-            println!("{}", pcr);
-        }
-
-        match pkt.pid() {
-            ts::PID::NULL => {}
-            ts::PID::PAT => {
-                if self.ts.pat().is_none() {
-                    let buf = pkt.buf_payload_section()?;
-
-                    self.ts.pat_buf.write_all(buf)?;
-
-                    if let Some(t) = self.ts.pat() {
-                        println!("{:?}", t);
-                    }
-                }
-            }
-            ts::PID::SDT => {
-                if self.ts.sdt().is_none() {
-                    let buf = pkt.buf_payload_section()?;
-
-                    self.ts.sdt_buf.write_all(buf)?;
-
-                    if let Some(t) = self.ts.sdt() {
-                        println!("{:?}", t);
-                    }
-                }
-            }
-            ts::PID::EIT => {
-                let buf = pkt.buf_payload_section()?;
-
-                if pkt.pusi() {
-                    if self.ts.eit_buf.position() != 0 {
-                        let eit = ts::EIT::new(self.ts.eit_buf.get_ref().as_slice());
-                        println!("{:?}", eit);
-                    }
-
-                    self.ts.eit_buf.set_position(0);
-                    self.ts.eit_buf.get_mut().clear();
-                }
-
-                self.ts.eit_buf.write_all(buf)?;
-            }
-            ts::PID::Other(pid) => {
-                if self.ts.pmt().is_none() && Some(pid) == self.ts.pmt_pid() {
-                    let buf = pkt.buf_payload_section()?;
-
-                    self.ts.pmt_buf.write_all(buf)?;
-                    let pmt = self.ts.pmt().unwrap();
-
-                    // <build stream from PMT>
-                    let mut strm = Stream::new();
-
-                    for ts_strm in pmt.streams().filter_map(ts::Result::ok) {
-                        let trk = Track::new(u16::from(ts_strm.pid()));
-                        strm.tracks.push(trk);
-                    }
-
-                    self.ts.stream = Some(strm);
-                    // </build stream from PMT>
-
-                    if let Some(t) = self.ts.pmt() {
-                        println!("{:?}", t);
-                    }
-                } else if self.ts.can_demux() {
-                    if let Some(ref mut strm) = self.ts.stream {
-                        if let Some(ref mut trk) = strm.tracks.iter_mut().find(|t| t.id == pid) {
-                            let buf = pkt.buf_payload_pes()?;
-
-                            if pkt.pusi() {
-                                if !trk.pkt.is_empty() {
-                                    // let szzz = copy(
-                                    //     &mut trk.pkt.buf.get_ref().as_slice(),
-                                    //     &mut trk.dbg_file,
-                                    // )?;
-                                    let szzz = trk.pkt.buf.position();
-
-                                    println!(
-                                        "(0x{:016X}) :pid {} :pts {:?} :dts {:?} :sz {}",
-                                        trk.pkt.offset,
-                                        pid,
-                                        trk.pkt.pts.map(ts::DurationFmt::from),
-                                        trk.pkt.dts.map(ts::DurationFmt::from),
-                                        szzz,
-                                    );
-                                }
-
-                                let pes = ts::PES::new(buf);
-
-                                trk.pkt.buf_reset();
-
-                                trk.pkt.offset += strm.offset + ts_pkt_raw.len() - buf.len();
-                                trk.pkt.pts = pes.pts().map(Duration::from);
-                                trk.pkt.dts = pes.dts().map(Duration::from);
-                                trk.pkt.buf.write_all(pes.buf_seek_payload())?;
-                            } else {
-                                trk.pkt.buf.write_all(buf)?;
-                            }
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-
-        Ok(())
     }
 }
 
@@ -392,12 +326,8 @@ impl Input for InputUDP {
         while !buf.is_empty() {
             let ts_pkt_raw = buf.pop_front().unwrap();
 
-            if let Err(e) = self.demux(&ts_pkt_raw) {
+            if let Err(e) = self.demuxer.demux(&ts_pkt_raw) {
                 eprintln!("error demux ts-packet: ({:?})", e);
-            }
-
-            if let Some(ref mut strm) = self.ts.stream {
-                strm.offset += ts_pkt_raw.len();
             }
         }
 

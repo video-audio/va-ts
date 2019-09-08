@@ -1,6 +1,7 @@
+use std::marker::PhantomData;
+
 use crate::result::Result;
 use crate::table_id::TableID;
-use std::marker::PhantomData;
 
 pub trait Bufer<'buf> {
     /// borrow a reference to the underlying buffer
