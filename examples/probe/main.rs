@@ -16,162 +16,11 @@ use url::{Host, Url};
 
 use error::{Error, Kind as ErrorKind, Result};
 
-// struct Packet {
-//     offset: usize,
-
-//     /// presentation time stamp
-//     pts: Option<Duration>,
-
-//     /// decode time stamp
-//     dts: Option<Duration>,
-
-//     /// reusable buffer to collect payload
-//     buf: Cursor<Vec<u8>>,
-// }
-
-// impl Packet {
-//     fn new() -> Packet {
-//         Packet {
-//             offset: 0,
-//             pts: None,
-//             dts: None,
-//             buf: Cursor::new(Vec::with_capacity(2048)),
-//         }
-//     }
-
-//     #[inline(always)]
-//     fn buf_reset(&mut self) {
-//         self.buf.set_position(0);
-//         self.buf.get_mut().clear();
-//     }
-
-//     #[inline(always)]
-//     fn is_empty(&self) -> bool {
-//         self.buf.position() == 0
-//     }
-// }
-
-// struct Track {
-//     /// ID/PID
-//     ///   - PID for mpegts
-//     ///   - ID for RTMP/HLS, DASH, MP4
-//     id: u16,
-
-//     // TODO: add codec
-//     // codec: Codec,
-//     pkt: Packet,
-//     // dbg_file: File,
-// }
-
-// impl Track {
-//     fn new(id: u16) -> Track {
-//         Track {
-//             id: id,
-//             pkt: Packet::new(),
-//             // dbg_file: File::create(format!("/tmp/dump-{}.h264", id)).unwrap(),
-//         }
-//     }
-// }
-
-// struct Stream {
-//     /// current global offset
-//     /// aka bytes-processed / bytes-readen
-//     offset: usize,
-
-//     tracks: Vec<Track>,
-// }
-
-// impl Stream {
-//     fn new() -> Stream {
-//         Stream {
-//             offset: 0,
-//             tracks: Vec::new(),
-//         }
-//     }
-// }
-
-// pub struct TS {
-//     pat_buf: Cursor<Vec<u8>>,
-//     pmt_buf: Cursor<Vec<u8>>,
-//     sdt_buf: Cursor<Vec<u8>>,
-//     eit_buf: Cursor<Vec<u8>>,
-
-//     stream: Option<Stream>,
-// }
-
-// impl TS {
-//     fn new() -> TS {
-//         TS {
-//             pat_buf: Cursor::new(Vec::with_capacity(ts::Packet::SZ)),
-//             pmt_buf: Cursor::new(Vec::with_capacity(ts::Packet::SZ)),
-//             sdt_buf: Cursor::new(Vec::with_capacity(ts::Packet::SZ)),
-//             eit_buf: Cursor::new(Vec::with_capacity(384)),
-
-//             stream: None,
-//         }
-//     }
-
-//     fn pat(&self) -> Option<ts::PAT> {
-//         if self.pat_buf.position() == 0 {
-//             None
-//         } else {
-//             Some(ts::PAT::new(self.pat_buf.get_ref().as_slice()))
-//         }
-//     }
-
-//     fn pmt(&self) -> Option<ts::PMT> {
-//         if self.pmt_buf.position() == 0 {
-//             None
-//         } else {
-//             Some(ts::PMT::new(self.pmt_buf.get_ref().as_slice()))
-//         }
-//     }
-
-//     fn pmt_pid(&self) -> Option<u16> {
-//         self.pat().and_then(|p| p.first_program_map_pid())
-//     }
-
-//     fn sdt(&self) -> Option<ts::SDT> {
-//         if self.sdt_buf.position() == 0 {
-//             None
-//         } else {
-//             Some(ts::SDT::new(self.sdt_buf.get_ref().as_slice()))
-//         }
-//     }
-
-//     /// are PAT, PMT, \[SDT\], stream builded?
-//     fn can_demux(&self) -> bool {
-//         self.pat().is_some() && self.pmt().is_some() && self.stream.is_some()
-//     }
-// }
-
-// // struct DemuxerTS {}
-
-// // impl DemuxerTS {
-// //     pub fn new() -> DemuxerTS {
-// //         DemuxerTS {}
-// //     }
-// // }
-
 trait Input {
     fn open(&mut self) -> Result<()>;
     fn read(&mut self) -> Result<()>;
     fn close(&mut self) -> Result<()>;
 }
-
-// trait Filter {
-//     fn consume_strm(&self);
-//     fn consume_trk(&self);
-//     fn consume_pkt_raw(&self);
-//     fn consume_pkt(&self);
-//     fn consume_frm(&self);
-
-//     fn produce_strm(&self);
-//     fn produce_trk(&self);
-//     fn produce_pkt_raw(&self);
-//     fn produce_pkt(&self);
-//     fn produce_frm(&self);
-// }
 
 struct DemuxerTSEvents {
     done_once: HashSet<ts::SubtableID>,
@@ -405,36 +254,6 @@ impl Input for InputUDP {
     }
 }
 
-struct InputFile {
-    url: Url,
-}
-
-impl InputFile {
-    pub fn new(url: Url) -> InputFile {
-        InputFile { url: url }
-    }
-}
-
-impl Input for InputFile {
-    fn open(&mut self) -> Result<()> {
-        println!("<<< File open {}", self.url);
-
-        Ok(())
-    }
-
-    fn read(&mut self) -> Result<()> {
-        thread::sleep(Duration::from_secs(1000));
-
-        Ok(())
-    }
-
-    fn close(&mut self) -> Result<()> {
-        println!("<<< File close {}", self.url);
-
-        Ok(())
-    }
-}
-
 struct Wrkr<I> {
     input: Arc<Mutex<I>>,
 }
@@ -473,9 +292,9 @@ fn main() {
     // let args: Vec<String> = env::args().collect();
     // println!("{:?}", args);
     let matches = App::new("V/A tool")
-        .version("0.0.1")
+        .version("0.0.3")
         .author("Ivan Egorov <vany.egorov@gmail.com>")
-        .about("Video/audio swiss knife")
+        .about("simple mpeg-ts mcast probe")
         .arg(
             Arg::with_name("input")
                 // .index(1)
@@ -496,28 +315,16 @@ fn main() {
         }
     };
 
-    let input_url_1 = input_url.clone();
-    let input_url_2 = input_url.clone();
+    let input = InputUDP::new(input_url, 5000 * 7);
 
-    // <input builder based on URL>
-    let input_udp = InputUDP::new(input_url_1, 5000 * 7);
-    let input_file = InputFile::new(input_url_2);
-    // </input builder based on URL>
+    let wrkr = Wrkr::new(input);
 
-    let wrkr1 = Wrkr::new(input_udp);
-    let wrkr2 = Wrkr::new(input_file);
-
-    if let Err(err) = wrkr1.run() {
-        eprintln!("error start worker №1: {:?}\n", err);
-        process::exit(1);
-    }
-
-    if let Err(err) = wrkr2.run() {
-        eprintln!("error start worker №2: {:?}\n", err);
+    if let Err(err) = wrkr.run() {
+        eprintln!("error start worker: {:?}\n", err);
         process::exit(1);
     }
 
     loop {
-        thread::sleep(Duration::from_secs(60));
+        thread::sleep(Duration::from_secs(1));
     }
 }

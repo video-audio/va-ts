@@ -12,12 +12,21 @@ RUN rustup target add x86_64-unknown-linux-musl
 
 WORKDIR /usr/local/src/udp-mpegts
 
-RUN mkdir -v src/
+RUN mkdir -pv src/
+RUN mkdir -pv examples/probe
 RUN echo "fn main() {println!(\"---\")}" > ./src/main.rs
+RUN echo "fn main() {println!(\"---\")}" > ./examples/probe/main.rs
 COPY ./Cargo.toml ./
 RUN RUSTFLAGS=-Clinker=musl-gcc cargo \
   build \
   --release \
+  --verbose \
+  --target=x86_64-unknown-linux-musl
+RUN RUSTFLAGS=-Clinker=musl-gcc cargo \
+  build \
+  --release \
+  --verbose \
+  --example probe \
   --target=x86_64-unknown-linux-musl
 
 RUN rm -rvf ./target/x86_64-unknown-linux-musl/debug/deps/va-ts*

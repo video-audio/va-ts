@@ -1,12 +1,12 @@
 [package]
 name = "va-ts"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2018"
 authors = ["Ivan Egorov <vany.egorov@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/video-audio/va-ts"
 homepage = "https://github.com/video-audio/va-ts"
-documentation = "https://docs.rs/va-ts/0.0.2/va-ts"
+documentation = "https://docs.rs/va-ts/0.0.3/va-ts"
 description = """
 MPEG-TS implementation for Rust
 """
