@@ -8,11 +8,11 @@ charset = utf-8
 trim_trailing_whitespace = true
 insert_final_newline = true
 
-[cluster/**/nginx/**/*.conf]
+[dockerfiles/**/nginx/**/*.conf]
 indent_style = tab
 indent_size = 2
 
-[cluster/**/nginx/**/default]
+[dockerfiles/**/nginx/**/default]
 indent_style = tab
 indent_size = 2
 

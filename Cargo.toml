@@ -16,7 +16,7 @@ keywords = [
 ]
 categories = ["video-audio"]
 exclude = [
-    "cluster/*",
+    "dockerfiles/*",
     "dumps/*",
     "run.sh"
 ]

@@ -3,12 +3,12 @@ version: "3"
 services:
   build-rs:
     build:
-      dockerfile: ./cluster/build-rs/Dockerfile
+      dockerfile: ./dockerfiles/build-rs/Dockerfile
       context: ..
 
   tsplay:
     build:
-      dockerfile: ./cluster/tsplay/Dockerfile
+      dockerfile: ./dockerfiles/tsplay/Dockerfile
       context: ..
     volumes:
       - /tmp/va-dumps/:/mnt/dumps/
