@@ -262,7 +262,7 @@ where
     events: T,
 }
 
-unsafe impl<T> Send for Demuxer<T> where T: DemuxerEvents {}
+unsafe impl<T> Send for Demuxer<T> where T: DemuxerEvents + Send {}
 
 impl<T> Demuxer<T>
 where
