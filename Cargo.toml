@@ -27,4 +27,4 @@ encoding_rs = "~0.8"
 
 [dev-dependencies]
 clap = "~3.2"
-url = "~2.2"
+url = "~2.3"
