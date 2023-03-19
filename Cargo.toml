@@ -23,7 +23,7 @@ exclude = [
 
 [dependencies]
 chrono = "~0.4"
-encoding_rs = "~0.8"
+encoding_rs = "~0.8.32"
 
 [dev-dependencies]
 clap = "~4.0"
